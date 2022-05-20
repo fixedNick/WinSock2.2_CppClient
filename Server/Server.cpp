@@ -14,16 +14,19 @@
 #include <iostream>
 #include <conio.h>
 #include <string>
+#include <thread>
 
 #pragma comment(lib, "Ws2_32.lib")
 
 using std::cout;
 using std::endl;
 using std::string;
+using std::thread;
 
 WSADATA wsaData;
 
 BOOL TransactMSG(SOCKET ClientSocket);
+void ProcessClient(SOCKET ClientSocket);
 
 int main() {
 	std::cout << "Server application started!" << std::endl;
@@ -80,24 +83,34 @@ int main() {
 		return 1;
 	}
 
-	SOCKET ClientSocket;
-	ClientSocket = INVALID_SOCKET;
+	while (true)
+	{
+		SOCKET ClientSocket;
+		ClientSocket = INVALID_SOCKET;
 
-	// Accept a client socket
-	ClientSocket = accept(ListenSocket, NULL, NULL);
-	if (ClientSocket == INVALID_SOCKET) {
-		cout << "accept failed: " << WSAGetLastError() << "\n";
-		closesocket(ListenSocket);
-		WSACleanup();
-		return 1;
+		// Accept a client socket
+		ClientSocket = accept(ListenSocket, NULL, NULL);
+		if (ClientSocket == INVALID_SOCKET) {
+			cout << "accept failed: " << WSAGetLastError() << "\n";
+			closesocket(ListenSocket);
+			WSACleanup();
+			return 1;
+		}
+
+
+		thread t(ProcessClient, ClientSocket);
+		t.detach();
 	}
 
 	closesocket(ListenSocket);
 
-	TransactMSG(ClientSocket);
-
 	_getch();
 	return 0;
+}
+
+void ProcessClient(SOCKET ClientSocket)
+{
+	TransactMSG(ClientSocket);
 }
 
 BOOL TransactMSG(SOCKET ClientSocket)
@@ -126,7 +139,7 @@ BOOL TransactMSG(SOCKET ClientSocket)
 			cout << "Bytes sent: " << iSendResult << "\n";
 		}
 		else if (iResult == 0)
-			cout << "Connection closing...\n";
+			cout << "Client Disconnected...\n";
 		else {
 			cout << "recv failed: " << WSAGetLastError() << "\n";
 			closesocket(ClientSocket);
@@ -136,7 +149,7 @@ BOOL TransactMSG(SOCKET ClientSocket)
 
 	} while (iResult > 0);
 
-	if (recvbuf == "exit") {
+	if (recvbuf == "stop_server") {
 		iResult = shutdown(ClientSocket, SD_SEND);
 		if (iResult == SOCKET_ERROR) {
 			printf("shutdown failed: %d\n", WSAGetLastError());
