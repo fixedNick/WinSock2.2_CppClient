@@ -15,18 +15,35 @@
 #include <conio.h>
 #include <string>
 #include <thread>
+#include <vector>
 
 #pragma comment(lib, "Ws2_32.lib")
+
+#ifdef NEW_CLIENT_CONNECTED
+#undef NEW_CLIENT_CONNECTED
+#endif
+
+#ifdef CLIENT_DISCONNECTED
+#undef CLIENT_DISCONNECTED
+#endif
+
+
+#define NEW_CLIENT_CONNECTED	1
+#define CLIENT_DISCONNECTED		2
 
 using std::cout;
 using std::endl;
 using std::string;
 using std::thread;
+using std::vector;
+
+vector<SOCKET> Clients;
 
 WSADATA wsaData;
 
-BOOL TransactMSG(SOCKET ClientSocket);
+BOOL TransactMSG(SOCKET ClientSocket, string msg = "");
 void ProcessClient(SOCKET ClientSocket);
+void NotificateClient(SOCKET ClientSocket, int notificationType);
 
 int main() {
 	std::cout << "Server application started!" << std::endl;
@@ -97,6 +114,7 @@ int main() {
 			return 1;
 		}
 
+		Clients.push_back(ClientSocket);
 
 		thread t(ProcessClient, ClientSocket);
 		t.detach();
@@ -113,10 +131,10 @@ void ProcessClient(SOCKET ClientSocket)
 	TransactMSG(ClientSocket);
 }
 
-BOOL TransactMSG(SOCKET ClientSocket)
+string ReceiveMSGFromClient(SOCKET ClientSocket)
 {
 	char recvbuf[DEFAULT_BUFLEN];
-	int iResult, iSendResult;
+	int iResult;
 	int recvbuflen = DEFAULT_BUFLEN;
 
 	// Receive until the peer shuts down the connection
@@ -127,16 +145,6 @@ BOOL TransactMSG(SOCKET ClientSocket)
 			cout << "Bytes received: " << iResult << "\n";
 			recvbuf[iResult] = 0;
 			cout << "Message from client: " << recvbuf << endl;;
-
-			// Echo the buffer back to the sender
-			iSendResult = send(ClientSocket, recvbuf, iResult, 0);
-			if (iSendResult == SOCKET_ERROR) {
-				cout << "send failed: " << WSAGetLastError() << "\n";
-				closesocket(ClientSocket);
-				WSACleanup();
-				return 1;
-			}
-			cout << "Bytes sent: " << iSendResult << "\n";
 		}
 		else if (iResult == 0)
 			cout << "Client Disconnected...\n";
@@ -144,15 +152,36 @@ BOOL TransactMSG(SOCKET ClientSocket)
 			cout << "recv failed: " << WSAGetLastError() << "\n";
 			closesocket(ClientSocket);
 			WSACleanup();
-			return 1;
+			return "";
 		}
 
 	} while (iResult > 0);
+}
 
+BOOL SendMSGToClient(SOCKET ClientSocket, string msg = "")
+{
+	int iSendResult;
+	// Echo the buffer back to the sender
+	iSendResult = send(ClientSocket, msg.c_str(), (unsigned)strlen(msg.c_str()), 0);
+	if (iSendResult == SOCKET_ERROR) {
+		cout << "send failed: " << WSAGetLastError() << "\n";
+		closesocket(ClientSocket);
+		WSACleanup();
+		return false;
+	}
+	cout << "Bytes sent: " << iSendResult << "\n";
+	return true;
+}
+
+BOOL TransactMSG(SOCKET ClientSocket, string msg)
+{
+	int iResult;
+	string recvbuf = ReceiveMSGFromClient(ClientSocket);
+	SendMSGToClient(ClientSocket, msg.length() > 0 ? msg : recvbuf);
 	if (recvbuf == "stop_server") {
 		iResult = shutdown(ClientSocket, SD_SEND);
 		if (iResult == SOCKET_ERROR) {
-			printf("shutdown failed: %d\n", WSAGetLastError());
+			cout << "shutdown failed: " << WSAGetLastError() << "\n";
 			closesocket(ClientSocket);
 			WSACleanup();
 			return 1;
